@@ -150,7 +150,7 @@ if __name__ == '__main__':
 
     df = pd.DataFrame(ball_track[2:], columns=['x', 'y'])
     # 使用插值函数填补缺失值
-    df= df.interpolate().bfill()
+    df= df.interpolate().bfill().ffill()
     ball_track[2:] = list(df.itertuples(index=False, name=None))
 
     
