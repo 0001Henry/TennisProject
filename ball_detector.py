@@ -19,23 +19,23 @@ class BallDetector:
     def infer_model(self, frames):
         """ Run pretrained model on a consecutive list of frames
         :params
-            frames: list of consecutive video frames
+            frames: list of consecutive video frames type=np.ndarray shape=(720,  1280, 3) 
         :return
-            ball_track: list of detected ball points
+            ball_track: list of detected ball points (x, y)
         """
         ball_track = [(None, None)]*2
         prev_pred = [None, None]
         for num in tqdm(range(2, len(frames))):
-            img = cv2.resize(frames[num], (self.width, self.height))
+            img = cv2.resize(frames[num], (self.width, self.height)) # img.shape = (360, 640, 3)
             img_prev = cv2.resize(frames[num-1], (self.width, self.height))
             img_preprev = cv2.resize(frames[num-2], (self.width, self.height))
-            imgs = np.concatenate((img, img_prev, img_preprev), axis=2)
+            imgs = np.concatenate((img, img_prev, img_preprev), axis=2)  # img.shape = (360, 640, 9)
             imgs = imgs.astype(np.float32)/255.0
-            imgs = np.rollaxis(imgs, 2, 0)
-            inp = np.expand_dims(imgs, axis=0)
+            imgs = np.rollaxis(imgs, 2, 0)  # img.shape = (9, 360, 640)
+            inp = np.expand_dims(imgs, axis=0) # inp.shape = (1, 9, 360, 640)
 
-            out = self.model(torch.from_numpy(inp).float().to(self.device))
-            output = out.argmax(dim=1).detach().cpu().numpy()
+            out = self.model(torch.from_numpy(inp).float().to(self.device)) # out.shape=torch.Size([1, 256, 360, 640])
+            output = out.argmax(dim=1).detach().cpu().numpy() # (1, 360, 640)
             x_pred, y_pred = self.postprocess(output, prev_pred)
             prev_pred = [x_pred, y_pred]
             ball_track.append((x_pred, y_pred))
@@ -54,9 +54,9 @@ class BallDetector:
         feature_map *= 255
         feature_map = feature_map.reshape((self.height, self.width))
         feature_map = feature_map.astype(np.uint8)
-        ret, heatmap = cv2.threshold(feature_map, 127, 255, cv2.THRESH_BINARY)
+        ret, heatmap = cv2.threshold(feature_map, 127, 255, cv2.THRESH_BINARY) # 将灰度图像进行二值化处理
         circles = cv2.HoughCircles(heatmap, cv2.HOUGH_GRADIENT, dp=1, minDist=1, param1=50, param2=2, minRadius=2,
-                                   maxRadius=7)
+                                   maxRadius=7) #检测图像中的圆圈 circles.shape=(1, N, 3)
         x, y = None, None
         if circles is not None:
             if prev_pred[0]:

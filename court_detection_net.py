@@ -27,10 +27,10 @@ class CourtDetectorNet():
             img = cv2.resize(image, (output_width, output_height))
             inp = (img.astype(np.float32) / 255.)
             inp = torch.tensor(np.rollaxis(inp, 2, 0))
-            inp = inp.unsqueeze(0)
+            inp = inp.unsqueeze(0) # torch.Size([1, 3, 360, 640])
 
-            out = self.model(inp.float().to(self.device))[0]
-            pred = F.sigmoid(out).detach().cpu().numpy()
+            out = self.model(inp.float().to(self.device))[0] # torch.Size([15, 360, 640])
+            pred = F.sigmoid(out).detach().cpu().numpy() # (15, 360, 640)
 
             points = []
             for kps_num in range(14):
@@ -47,7 +47,7 @@ class CourtDetectorNet():
                 else:
                     points.append(None)
 
-            matrix_trans = get_trans_matrix(points) 
+            matrix_trans = get_trans_matrix(points) # matrix_trans.shape=(3, 3) points.shape=(14, 1, 2)
             points = None
             if matrix_trans is not None:
                 points = cv2.perspectiveTransform(refer_kps, matrix_trans)
@@ -55,4 +55,4 @@ class CourtDetectorNet():
             kps_res.append(points)
             matrixes_res.append(matrix_trans)
             
-        return matrixes_res, kps_res    
+        return matrixes_res, kps_res     # 变换矩阵和关键点列表

@@ -1,35 +1,15 @@
 import cv2
 from court_detection_net import CourtDetectorNet
 import numpy as np
-from court_reference import CourtReference
 from bounce_detector import BounceDetector
 from person_detector import PersonDetector
 from ball_detector import BallDetector
-from utils import scene_detect
+from utils import scene_detect, read_video, get_court_img, write_video
 import argparse
 import torch
 
-def read_video(path_video):
-    cap = cv2.VideoCapture(path_video)
-    fps = int(cap.get(cv2.CAP_PROP_FPS))
-    frames = []
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if ret:
-            frames.append(frame)
-        else:
-            break    
-    cap.release()
-    return frames, fps
 
-def get_court_img():
-    court_reference = CourtReference()
-    court = court_reference.build_court_reference()
-    court = cv2.dilate(court, np.ones((10, 10), dtype=np.uint8))
-    court_img = (np.stack((court, court, court), axis=2)*255).astype(np.uint8)
-    return court_img
-
-def main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, persons_top, persons_bottom,
+def pipline(frames, scenes, bounces, ball_track, homography_matrices, kps_court, persons_top, persons_bottom,
          draw_trace=False, trace=7):
     """
     :params
@@ -99,8 +79,17 @@ def main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, pe
                     court_img = cv2.circle(court_img, (int(ball_point[0, 0, 0]), int(ball_point[0, 0, 1])),
                                                        radius=0, color=(0, 255, 255), thickness=50)
 
+
                 minimap = court_img.copy()
 
+                # draw balltrack in minimap
+                if i not in bounces and inv_mat is not None:
+                    ball_point = ball_track[i]
+                    ball_point = np.array(ball_point, dtype=np.float32).reshape(1, 1, 2)
+                    ball_point = cv2.perspectiveTransform(ball_point, inv_mat)
+                    minimap = cv2.circle(minimap, (int(ball_point[0, 0, 0]), int(ball_point[0, 0, 1])),
+                                                       radius=0, color=(255, 255, 255), thickness=50)
+                                  
                 # draw persons
                 persons = persons_top[i] + persons_bottom[i]                    
                 for j, person in enumerate(persons):
@@ -123,41 +112,40 @@ def main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, pe
         else:    
             imgs_res = imgs_res + frames[scenes[num_scene][0]:scenes[num_scene][1]] 
     return imgs_res        
- 
-def write(imgs_res, fps, path_output_video):
-    height, width = imgs_res[0].shape[:2]
-    out = cv2.VideoWriter(path_output_video, cv2.VideoWriter_fourcc(*'DIVX'), fps, (width, height))
-    for num in range(len(imgs_res)):
-        frame = imgs_res[num]
-        out.write(frame)
-    out.release()    
 
 
 if __name__ == '__main__':
-
+    torch.cuda.empty_cache() 
+    
     parser = argparse.ArgumentParser()
-    parser.add_argument('--path_ball_track_model', type=str, help='path to pretrained model for ball detection')
-    parser.add_argument('--path_court_model', type=str, help='path to pretrained model for court detection')
-    parser.add_argument('--path_bounce_model', type=str, help='path to pretrained model for bounce detection')
-    parser.add_argument('--path_input_video', type=str, help='path to input video')
-    parser.add_argument('--path_output_video', type=str, help='path to output video')
+    parser.add_argument('--path_ball_track_model', default='./models/model_ball_det.pt', type=str, help='path to pretrained model for ball detection')
+    parser.add_argument('--path_court_model', default='./models/model_tennis_court_det.pt', type=str, help='path to pretrained model for court detection')
+    parser.add_argument('--path_bounce_model', default='./models/ctb_regr_bounce.cbm', type=str, help='path to pretrained model for bounce detection')
+    parser.add_argument('--path_input_video', default='./input_videos/input_video1.mp4', type=str, help='path to input video')
+    parser.add_argument('--path_output_video', default='./output_videos/output_video1_fasterrcnn.avi', type=str, help='path to output video')
     args = parser.parse_args()
     
+    bounces=None
+    ball_track=None
+    homography_matrices=None
+    kps_court=None
+    
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    frames, fps = read_video(args.path_input_video) 
-    scenes = scene_detect(args.path_input_video)    
-
-    print('ball detection')
-    ball_detector = BallDetector(args.path_ball_track_model, device)
-    ball_track = ball_detector.infer_model(frames)
+    print('device =',device)
+    frames, fps = read_video(args.path_input_video)  # frames[0].shape=(720,  1280, 3)
+    scenes = scene_detect(args.path_input_video)    # [[ , ]]
 
     print('court detection')
     court_detector = CourtDetectorNet(args.path_court_model, device)
     homography_matrices, kps_court = court_detector.infer_model(frames)
 
     print('person detection')
-    person_detector = PersonDetector(device)
-    persons_top, persons_bottom = person_detector.track_players(frames, homography_matrices, filter_players=False)
+    person_detector = PersonDetector(model_type='yolo',device=device)
+    persons_top, persons_bottom = person_detector.track_players(frames, homography_matrices, filter_players=True)
+    
+    print('ball detection')
+    ball_detector = BallDetector(args.path_ball_track_model, device)
+    ball_track = ball_detector.infer_model(frames) # ball_track: list[tuple[None, None]]
 
     # bounce detection
     bounce_detector = BounceDetector(args.path_bounce_model)
@@ -165,10 +153,10 @@ if __name__ == '__main__':
     y_ball = [x[1] for x in ball_track]
     bounces = bounce_detector.predict(x_ball, y_ball)
 
-    imgs_res = main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, persons_top, persons_bottom,
+    imgs_res = pipline(frames, scenes, bounces, ball_track, homography_matrices, kps_court, persons_top, persons_bottom,
                     draw_trace=True)
 
-    write(imgs_res, fps, args.path_output_video)
+    write_video(imgs_res, fps, args.path_output_video)
 
 
 
