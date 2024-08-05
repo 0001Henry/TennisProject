@@ -1,6 +1,7 @@
 import cv2
 from court_detection_net import CourtDetectorNet
 import numpy as np
+import pandas as pd
 from bounce_detector import BounceDetector
 from person_detector import PersonDetector
 from ball_detector import BallDetector
@@ -122,7 +123,7 @@ if __name__ == '__main__':
     parser.add_argument('--path_court_model', default='./models/model_tennis_court_det.pt', type=str, help='path to pretrained model for court detection')
     parser.add_argument('--path_bounce_model', default='./models/ctb_regr_bounce.cbm', type=str, help='path to pretrained model for bounce detection')
     parser.add_argument('--path_input_video', default='./input_videos/input_video1.mp4', type=str, help='path to input video')
-    parser.add_argument('--path_output_video', default='./output_videos/output_video1_fasterrcnn.avi', type=str, help='path to output video')
+    parser.add_argument('--path_output_video', default='./output_videos/output_video1_yolov8.avi', type=str, help='path to output video')
     args = parser.parse_args()
     
     bounces=None
@@ -147,6 +148,12 @@ if __name__ == '__main__':
     ball_detector = BallDetector(args.path_ball_track_model, device)
     ball_track = ball_detector.infer_model(frames) # ball_track: list[tuple[None, None]]
 
+    df = pd.DataFrame(ball_track[2:], columns=['x', 'y'])
+    # 使用插值函数填补缺失值
+    df= df.interpolate().bfill()
+    ball_track[2:] = list(df.itertuples(index=False, name=None))
+
+    
     # bounce detection
     bounce_detector = BounceDetector(args.path_bounce_model)
     x_ball = [x[0] for x in ball_track]

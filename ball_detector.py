@@ -70,4 +70,6 @@ class BallDetector:
             else:
                 x = circles[0][0][0]*scale
                 y = circles[0][0][1]*scale
+        else:
+            print("circles is None")
         return x, y
