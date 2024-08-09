@@ -31,12 +31,13 @@ class PersonDetector():
         self.counter_bottom = 0
         
         
-        
     def detect(self, image, person_min_score=0.7):
         if self.model_type == 'fasterrcnn':
             return self._detect_fasterrcnn(image, person_min_score)
         elif self.model_type == 'yolo':
             return self._detect_yolo(image, person_min_score)
+        else:
+            raise NotImplementedError(f"No such model: {repr(self.model_type)}")
 
     def _detect_fasterrcnn(self, image, person_min_score=0.7):
         PERSON_LABEL = 1

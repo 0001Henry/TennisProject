@@ -6,11 +6,20 @@ from scipy.spatial import distance
 from tqdm import tqdm
 
 class BallDetector:
-    def __init__(self, path_model=None, device='cuda'):
-        self.model = BallTrackerNet(input_channels=9, out_channels=256)
-        self.device = device
-        if path_model:
-            self.model.load_state_dict(torch.load(path_model, map_location=device))
+    def __init__(self, model_type='tracknet', device='cuda'):
+        self.model_type = model_type
+        self.device = device        
+        
+        if self.model_type == 'tracknet':
+            self.model = BallTrackerNet(input_channels=9, out_channels=256)
+            self.path_model = './models/model_ball_det_tracknet.pt'
+        elif self.model_type == 'yolo':
+            raise NotImplementedError("wsw orz")
+        else:
+            raise ValueError("model_type should be 'yolo' or 'tracknet'")
+
+        if self.path_model:
+            self.model.load_state_dict(torch.load(self.path_model, map_location=device))
             self.model = self.model.to(device)
             self.model.eval()
         self.width = 640
@@ -37,6 +46,8 @@ class BallDetector:
             out = self.model(torch.from_numpy(inp).float().to(self.device)) # out.shape=torch.Size([1, 256, 360, 640])
             output = out.argmax(dim=1).detach().cpu().numpy() # (1, 360, 640)
             x_pred, y_pred = self.postprocess(output, prev_pred)
+            if x_pred == None:
+                print(f"failed to detect the ball in frame {num}.")
             prev_pred = [x_pred, y_pred]
             ball_track.append((x_pred, y_pred))
         return ball_track
@@ -70,6 +81,6 @@ class BallDetector:
             else:
                 x = circles[0][0][0]*scale
                 y = circles[0][0][1]*scale
-        else:
-            print("circles is None")
+        # else:
+            # print("circles is None")
         return x, y
